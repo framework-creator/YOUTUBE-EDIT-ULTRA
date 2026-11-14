@@ -382,7 +382,7 @@ Implementation evidence: [one-shot audit](docs/ONE_SHOT_AUDIT.md) · [executed c
 
 ---
 
-## Development credits
+## Contributors and AI assistance
 
 **Benjamin Da Cunha:** project direction, requirements and final decisions.
 
