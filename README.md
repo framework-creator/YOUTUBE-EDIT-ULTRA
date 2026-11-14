@@ -4,6 +4,8 @@
 
 # YouTube-Edit-Ultra
 
+<p align="center"><img src="assets/readme-hero.svg" width="100%" alt="YOUTUBE-EDIT-ULTRA visual montage" /></p>
+
 **Action-preserving sports edits, music highlights and narrated analysis.**
 
 A local Python + FFmpeg toolkit for boxing, football and other sports. Build music montages around reviewed action windows, or compose evidence-led documentaries with a voice-over, subtitles and visual annotations. It saves edit plans and quality reports rather than treating a successfully encoded MP4 as proof of a good edit. Missing source evidence, permissions, voice dependencies or disk capacity are reported as blockers.
