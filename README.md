@@ -379,13 +379,3 @@ Historical production evidence, restored components and real-media acceptance: [
 Historical long-form evidence and its review limits remain in [production validation](docs/PRODUCTION_VALIDATION.md) and the project journal. Agent-driven past exports do not establish that every new athlete/style request can run without missing rights, action review or adequate storage. See [current workflow and test boundaries](docs/AUTONOMOUS_WORKFLOW.md).
 
 Implementation evidence: [one-shot audit](docs/ONE_SHOT_AUDIT.md) · [executed checks and limits](docs/ONE_SHOT_VERIFICATION.md).
-
----
-
-## Contributors and AI assistance
-
-**Benjamin Da Cunha:** project direction, requirements and final decisions.
-
-**ChatGPT (OpenAI):** code and documentation assistance, including README/video-gallery updates and branding integration.
-
-These credits disclose AI assistance; they do not assign human authorship, independently verify research findings or imply that an AI tool is a GitHub account contributor.
