@@ -448,6 +448,31 @@ def locked(args, folder, *, output=None, prepare_only=False):
             cat.save(out / "music_acquisition_report.json", acquisition)
             report["warnings"].extend(acquisition["errors"])
             music, excluded = cat.select_music(state, request["style"], playlist, mode=mode)
+        # One rights/risk decision per selected source, re-checked now (cache and old grants included).
+        from .source_rights import ACCEPTED, gate as rights_gate, write_report as write_rights
+        publishable = mode == "commercial" or bool(getattr(args, "publishable", False))
+        records = rights_gate(
+            [(r["path"], "video", state["permissions"].get(r["sha256"], {}).get("basis") or "catalogue")
+             for r in videos]
+            + [(r["path"], "audio", state["permissions"].get(r["sha256"], {}).get("basis") or "catalogue")
+               for r in music], state=state, offline=bool(args.offline))
+        gate_report = write_rights(out, records, mode=mode, publishable_required=publishable)
+        report["rights_gate"] = dict(gate_report["summary"]["counts"],
+                                     publishable=gate_report["summary"]["publishable"],
+                                     report=str(out / "rights_gate_report.json"))
+        if publishable:
+            accepted = {r["path"] for r in records if r["decision"] == ACCEPTED}
+            dropped = len(videos) + len(music)
+            videos = [r for r in videos if str(Path(r["path"]).resolve()) in accepted]
+            music = [r for r in music if str(Path(r["path"]).resolve()) in accepted]
+            dropped -= len(videos) + len(music)
+            if dropped:
+                report["warnings"].append(
+                    f"{dropped} source(s) écartée(s) par le contrôle des droits (REJETÉES ou NON VÉRIFIÉES, "
+                    "clé YEU_YOUTUBE_API_KEY requise pour les sources YouTube) : voir rights_gate_report.json")
+        elif not gate_report["summary"]["publishable"]:
+            report["warnings"].append(
+                "Publication non autorisée : sources REJETÉES ou NON VÉRIFIÉES, voir rights_gate_report.json")
         ready = readiness(state, request["athlete"], request["duration_seconds"], videos, music, request["style"], mode=mode)
         cat.save(out / "readiness_report.json", ready)
         cat.save(
@@ -498,9 +523,14 @@ def locked(args, folder, *, output=None, prepare_only=False):
             sources_only=True,
             music=[r["path"] for r in music],
             library=str(folder / "library"),
+            rights_state_dir=str(folder),
+            offline=bool(args.offline),
+            publishable=publishable,
             cache_dir=str(out / "cache"),
             output_dir=str(out),
         )
+        # The render subprocess re-runs the rights gate from disk: save grants added in memory.
+        cat.save(folder / "catalogue.json", state)
         cat.save(out / 'project.json', manifest)
         if prepare_only:
             report.update(status='PREPARED', manifest=str(out / 'project.json'))
@@ -752,6 +782,8 @@ def add_commands(sub):
     p.add_argument("--playlist")
     p.add_argument("--offline", action="store_true")
     p.add_argument('--mode', choices=['personal', 'commercial'], default='personal')
+    p.add_argument("--publishable", action="store_true",
+                   help="Garder seulement les sources ACCEPTÉES par le contrôle des droits")
     p.add_argument("--strict-actions", action="store_true")
     p.add_argument("--semantic-model")
     p.add_argument("--width", type=int, default=1920)

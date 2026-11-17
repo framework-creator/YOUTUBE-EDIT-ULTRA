@@ -18,6 +18,7 @@ Read [docs/AUTONOMOUS_WORKFLOW.md](docs/AUTONOMOUS_WORKFLOW.md) before music-hig
 
 ## Rights and musical constraints
 
+- Before any publication: `rights_gate_report.json` must be all `ACCEPTED` (use `--publishable`), the upload stays private, Studio checks are read by a person, then `ultra publication-check RECEIPT --studio ... --approve`. Never flip visibility in code; never use crop, mirror, speed, pitch or layering to evade Content ID.
 - Local presence, public access, an official uploader or Content ID acceptance is not permission. Retain URL, metadata, actual evidence and intended scope. Register hash-bound grants with `ultra catalogue authorize` / `authorize-url`; do not turn a project-specific private-use decision into a general publication grant.
 - Personal mode normally requires evidence. Explicit --attest-local-media may record the user's attestation for relevant media in explicit local --root paths, for personal edits only; never describe it as independently verified. Commercial mode requires explicit licence, reviewer/date, adaptation, distribution and monetization scope for both music and footage, plus required credit. No access-control or DRM bypass.
 - Spotify is authenticated, fully paginated metadata only. Genre requests can use admissible local audio when optional Spotify access fails; explicit playlists remain binding. Offline playlist caches are prior snapshots. Keep OAuth tokens and callbacks private and outside git.

@@ -331,7 +331,7 @@ For repeatable projects, edit [`examples/ronaldo.yml`](examples/ronaldo.yml). Ma
 
 1. Enable YouTube Data API v3 in your Google Cloud project and create an OAuth **Desktop** client.
 2. Save its JSON as `~/.config/youtube-edit-ultra/client_secret.json`.
-3. To screen *automatically discovered* YouTube sources, configure a separate YouTube Data API v3 key and inspect the source metadata:
+3. To screen YouTube-origin sources (discovered, downloaded or cached), configure a separate YouTube Data API v3 key and inspect the source metadata:
 
 ```bash
 export YEU_YOUTUBE_API_KEY='YOUR_API_KEY'
@@ -350,7 +350,19 @@ Wait for YouTube Studio's copyright checks, examine all territory restrictions,
 then manually publish **only** if the rights and checks are acceptable. Source
 metadata alone cannot predict Content ID claims or license reuse. Missing API
 keys or unsuccessful lookups exclude newly discovered YouTube sources from
-automatic acquisition. This does not inspect every pre-existing local file.
+automatic acquisition.
+
+Every montage also writes `rights_gate_report.json`: each video and music
+source, whatever its origin (discovery, catalogue, cache, local file, URL,
+prepared mix), is `ACCEPTED`, `REJECTED` or `UNVERIFIED`, with licence,
+evidence, geo restrictions, claim hints and check date. Add `--publishable`
+to `ueu create` or `ultra create` to keep only `ACCEPTED` sources. After the
+Studio checks finish, record the result; the command never changes visibility:
+
+```bash
+ultra publication-check output/cristiano-ronaldo-1800s/montage.youtube.json \
+  --studio no-claims --approve
+```
 
 Successful upload IDs, requested/actual privacy and the Studio review link are
 stored in `montage.youtube.json` to prevent duplicate submissions of that path.

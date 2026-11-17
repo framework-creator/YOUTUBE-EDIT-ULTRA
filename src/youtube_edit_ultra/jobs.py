@@ -320,6 +320,8 @@ def _deliver(job, args, rendered, result):
         os.link(src, dst)
     if cat.sha256(dst) != result['sha256']:
         raise UltraError('Delivery checksum mismatch')
+    from .source_rights import bind_montage
+    bind_montage(rendered, result['sha256'])
     edits = [Edit(**row) for row in cat.read(rendered / 'edit_plan.json')]
     music = [Path(p) for p in cat.read(rendered / 'source_report.json')['music']]
     settings = Settings(**args.request, output=rendered, library=job.path / 'library',
@@ -427,6 +429,8 @@ def execute(args):
         key = {k: options[k] for k in ('request', 'mode', 'width', 'height', 'fps', 'roots', 'state_dir',
                                      'playlist', 'offline', 'desktop', 'auto_actions', 'attest_local_media')}
         key['output_dir'] = str(Path(args.output_dir).expanduser().resolve())
+        if options.get('publishable'):
+            key['publishable'] = True  # never reuse a non-publishable job; old job names unchanged
         digest = hashlib.sha256(json.dumps(key, sort_keys=True).encode()).hexdigest()[:12]
         name = f"{slug(args.request['athlete'])}-{digest}"
         if args.new_job:name += '-' + str(time.time_ns())
@@ -552,6 +556,8 @@ def main(argv=None):
                         help='Use unverified heuristic motion windows when annotations are missing')
     create.add_argument('--attest-local-media', action='store_true',
                         help='Accept user-attested media under explicit --root paths for personal local edits')
+    create.add_argument('--publishable', action='store_true',
+                        help='Keep only sources ACCEPTED by the rights gate (needed before any publication)')
     create.add_argument('--desktop', action='store_true')
     create.add_argument('--new-job', action='store_true')
     create.add_argument('--width', type=int, default=1920)
