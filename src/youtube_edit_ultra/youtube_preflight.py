@@ -7,7 +7,7 @@ import re
 from urllib.parse import parse_qs, urlencode, urlparse
 from urllib.request import urlopen
 
-VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}\\Z")
+VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}\Z")
 API = "https://www.googleapis.com/youtube/v3/videos"
 
 
