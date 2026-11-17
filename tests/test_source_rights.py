@@ -370,3 +370,20 @@ def test_copy_with_its_own_bare_catalogue_row_inherits_the_youtube_identity(tmp_
     state["permissions"][digest] = catalogue.permission_grant("plain text evidence")
     record = decide(copy, state, items=[])
     assert record["youtube_id"] == VID and "SOURCE_REMOVED_OR_PRIVATE" in record["reasons"]
+
+
+def test_offline_never_calls_the_api_and_unchecked_youtube_is_unverified(tmp_path):
+    path, state = youtube_source(tmp_path)
+    with patch("youtube_edit_ultra.youtube_preflight.urlopen", side_effect=AssertionError("network used")):
+        record = gate([(str(path), "video", None)], state=state, api_key="test-key", offline=True)[0]
+    assert record["decision"] == UNVERIFIED and record["reasons"] == ["OFFLINE_NOT_RECHECKED"]
+    source = source_rights.describe(path, "video", state=state)
+    direct = source_rights.assess(source, grant=state["permissions"][catalogue.sha256(path)])
+    assert direct["decision"] == UNVERIFIED and "YOUTUBE_STATUS_NOT_RECHECKED" in direct["reasons"]
+
+
+def test_unlisted_source_and_empty_reports_are_not_publishable(tmp_path):
+    path, state = youtube_source(tmp_path)
+    record = decide(path, state, items=[api_item(status={"privacyStatus": "unlisted"})])
+    assert record["decision"] == REJECTED and "SOURCE_NOT_PUBLIC" in record["reasons"]
+    assert source_rights.summary([])["publishable"] is False

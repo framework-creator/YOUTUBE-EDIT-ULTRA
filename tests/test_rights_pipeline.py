@@ -248,3 +248,65 @@ def test_unreadable_catalogue_does_not_abort_a_personal_edit(tmp_path):
     assert ultra(["--no-banner", "create", "--spec", str(spec), "--dry-run"]) == 0
     [report] = (tmp_path / "out").glob("*/rights_gate_report.json")
     assert not catalogue.read(report)["summary"]["publishable"]
+
+
+# Tests added after mutation testing showed these produce/cli paths could break silently.
+
+@needs_ffmpeg
+def test_publishable_job_drops_unlicensed_music_even_when_video_is_accepted(tmp_path):
+    args, state_dir, video, _ = fixture_job(tmp_path)
+    licence_fixture_grants(state_dir, (video,))  # music keeps its text-only grant: UNVERIFIED
+    assert jobs.main([*args, "--publishable"]) == 2
+    job, _ = job_state(tmp_path)
+    assert any("Aucune musique autorisée" in b for b in catalogue.read(job / "production_report.json")["blockers"])
+    assert not list(job.rglob("*.mp4"))
+
+
+@needs_ffmpeg
+def test_publishable_job_passes_its_flags_to_the_render_subprocess(tmp_path):
+    args, state_dir, video, music = fixture_job(tmp_path)
+    licence_fixture_grants(state_dir, (video, music))
+    assert jobs.main([*args, "--publishable"]) == 0
+    job, _ = job_state(tmp_path)
+    project = catalogue.read(job / "project.json")
+    assert project["publishable"] is True and project["offline"] is True
+    assert project["rights_state_dir"] == str(state_dir.resolve())
+
+
+@needs_ffmpeg
+def test_commercial_mode_refuses_a_claimed_source_despite_commercial_grants(tmp_path, monkeypatch):
+    args, state_dir, source, music = fixture_job(tmp_path)
+    state = catalogue.read(state_dir / "catalogue.json")
+    state["permissions"] = {catalogue.sha256(p): catalogue.permission_grant(
+        "Owned test fixture", mode="commercial", license="Owned fixture licence",
+        rights_verified_by="Fixture author", rights_verified_at="2026-11-17T00:00:00Z", commercial_use=True,
+        adaptation=True, distribution=True, monetization=True, attribution_required=False)
+        for p in (source, music)}
+    catalogue.save(state_dir / "catalogue.json", state)
+    registry = tmp_path / "excluded_media.json"
+    registry.write_text(json.dumps([dict(sha256=catalogue.sha256(source), reason="claimed in Studio")]))
+    monkeypatch.setenv("YEU_CLAIMS_FILE", str(registry))
+    assert jobs.main(args + ["--mode", "commercial"]) == 2
+    job, _ = job_state(tmp_path)
+    gate = catalogue.read(job / "rights_gate_report.json")
+    assert [r["decision"] for r in gate["records"] if r["kind"] == "video"] == ["REJECTED"]
+
+
+@needs_ffmpeg
+def test_prepared_soundtrack_is_gated_like_any_music(tmp_path):
+    _, _, video, music = fixture_job(tmp_path)
+    spec = tmp_path / "project.json"
+    catalogue.save(spec, dict(athlete="Canelo Alvarez", duration="6s", sources=[str(video)], sources_only=True,
+                              prepared_soundtrack=str(music), rights_state_dir=str(tmp_path / "state"),
+                              output_dir=str(tmp_path / "out")))
+    assert ultra(["--no-banner", "create", "--spec", str(spec), "--dry-run"]) == 0
+    [report] = (tmp_path / "out").glob("*/rights_gate_report.json")
+    prepared = [r for r in catalogue.read(report)["records"] if r["provenance"] == "prepared_soundtrack"]
+    assert len(prepared) == 1 and prepared[0]["path"] == str(music.resolve())
+
+
+def test_receipt_without_upload_id_is_never_ready(tmp_path):
+    receipt = tmp_path / "montage.youtube.json"
+    receipt.write_text(json.dumps({"uploaded_privacy": "private"}))
+    assert check(receipt, tmp_path, "--studio", "no-claims", "--approve") == 2
+    assert "NO_UPLOAD_RECEIPT" in json.loads(receipt.read_text())["publication_check"]["reasons"]
