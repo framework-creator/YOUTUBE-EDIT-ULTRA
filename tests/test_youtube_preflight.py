@@ -23,7 +23,7 @@ def test_youtube_id_strict_hostname_and_routes():
     assert youtube_id(f"https://youtube.com/live/{VID}") == VID
     for url in [f"https://youtube.com.evil.test/watch?v={VID}",
                 f"http://youtube.com/watch?v={VID}",
-                f"https://youtube.com/watch?v=NOT_AN_ID",
+                "https://youtube.com/watch?v=NOT_AN_ID",
                 f"https://youtube.com:bad/watch?v={VID}",
                 "https://youtube.com/playlist?list=abc"]:
         assert youtube_id(url) is None
