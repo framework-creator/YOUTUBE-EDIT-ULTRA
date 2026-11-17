@@ -43,6 +43,12 @@ def test_status_and_unknown_not_approved():
     assert classify(VID, {"items": []})["status"] == "REJECT"
     assert classify(VID, payload(status={"license": "youtube"}))["status"] == "REJECT"
     assert classify(VID, payload(status={"embeddable": False}))["status"] == "REJECT"
+    incomplete = payload()
+    del incomplete["items"][0]["contentDetails"]["licensedContent"]
+    assert classify(VID, incomplete)["status"] == "REJECT"
+    incomplete = payload()
+    del incomplete["items"][0]["status"]["embeddable"]
+    assert classify(VID, incomplete)["status"] == "REJECT"
     assert classify(VID, {"items": [{"id": "OTHER"}]})["status"] == "UNKNOWN"
 
 
