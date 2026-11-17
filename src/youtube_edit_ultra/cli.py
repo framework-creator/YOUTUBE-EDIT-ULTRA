@@ -270,7 +270,7 @@ def create(args: argparse.Namespace) -> int:
         uploaded = upload(settings.output / "montage.mp4", title=metadata["title"],
                           description=metadata["description"], tags=metadata["tags"],
                           privacy=settings.publish, thumbnail=thumbnail)
-        print(f"YouTube : {uploaded['url']} (statut demandé : {settings.publish})")
+        print(f"YouTube : {uploaded['url']} (upload privé ; vérification Content ID dans Studio requise)")
     return 0
 
 
@@ -312,6 +312,8 @@ def publish(args: argparse.Namespace) -> int:
     result = upload(video, title=title, description=desc, tags=meta.get("tags", []),
                     privacy=args.privacy, thumbnail=thumb, synthetic_media=meta.get("synthetic_media", False))
     print(result["url"])
+    print("Upload privé. Ouvrir YouTube Studio, attendre les vérifications de droits "
+          "et vérifier les restrictions par pays avant toute publication.")
     return 0
 
 
