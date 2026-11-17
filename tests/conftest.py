@@ -14,3 +14,14 @@ def no_mac_disk_floor(monkeypatch):
     # Fixture renders must never create reservations in the person's live manager.
     from youtube_edit_ultra import storage
     monkeypatch.setattr(storage, 'GUARD_SCRIPT', None)
+
+
+@pytest.fixture(autouse=True)
+def isolated_rights_sources(monkeypatch, tmp_path_factory):
+    # Rights tests must never read the person's claim registry, catalogue or API key.
+    monkeypatch.delenv("YEU_YOUTUBE_API_KEY", raising=False)
+    from youtube_edit_ultra import cli, source_rights
+    empty = tmp_path_factory.mktemp("rights-state")
+    monkeypatch.setattr(source_rights, "CLAIMS_FILE", empty / "excluded_media.json")
+    monkeypatch.setenv("YEU_CLAIMS_FILE", str(empty / "excluded_media.json"))  # render subprocesses
+    monkeypatch.setattr(cli, "DEFAULT_STATE_DIR", empty)

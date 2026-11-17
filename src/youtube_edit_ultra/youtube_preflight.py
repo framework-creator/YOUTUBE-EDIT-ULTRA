@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlencode, urlparse
 from urllib.request import urlopen
 
@@ -52,10 +53,14 @@ def classify(video_id: str, payload: dict) -> dict:
     if not isinstance(details, dict) or not isinstance(status, dict):
         return dict(status="UNKNOWN", reasons=["INCOMPLETE_API_RESULT"], video_id=video_id)
     reasons = []
+    geo = None
     region = details.get("regionRestriction")
     if region is not None:
         reasons.append("PARTIAL_OR_FULL_GEO_RESTRICTION" if isinstance(region, dict)
                        else "GEO_RESTRICTION_METADATA_UNVERIFIED")
+        if isinstance(region, dict):
+            # allowed=[] means blocked everywhere; blocked=[] means viewable everywhere.
+            geo = {k: list(region[k]) for k in ("allowed", "blocked") if isinstance(region.get(k), list)}
     if details.get("licensedContent") is True:
         reasons.append("CONTENT_PARTNER_CLAIM_RISK")
     elif details.get("licensedContent") is not False:
@@ -70,8 +75,44 @@ def classify(video_id: str, payload: dict) -> dict:
         reasons.append("SOURCE_EMBED_METADATA_UNVERIFIED")
     if status.get("uploadStatus") not in {"processed"}:
         reasons.append("SOURCE_PROCESSING_UNVERIFIED")
-    return dict(status="REJECT" if reasons else "AVAILABLE_METADATA_ONLY",
-                reasons=reasons, video_id=video_id)
+    result = dict(status="REJECT" if reasons else "AVAILABLE_METADATA_ONLY",
+                  reasons=reasons, video_id=video_id, license=status.get("license"))
+    if geo is not None:
+        result["region_restriction"] = geo
+    return result
+
+
+def lookup(video_ids, *, api_key: str | None = None) -> dict:
+    """videos.list in batches of 50 ids (1 quota unit each); every id gets a fail-closed result."""
+    ids = list(dict.fromkeys(i for i in video_ids if isinstance(i, str) and VIDEO_ID.fullmatch(i)))
+    key = api_key if api_key is not None else os.environ.get("YEU_YOUTUBE_API_KEY", "")
+    if not key:
+        return {i: dict(status="UNKNOWN", reasons=["YOUTUBE_API_KEY_MISSING"], video_id=i) for i in ids}
+    out = {}
+    for start in range(0, len(ids), 50):
+        chunk = ids[start:start + 50]
+        query = urlencode({"part": "contentDetails,status", "id": ",".join(chunk), "key": key})
+        try:
+            with urlopen(API + "?" + query, timeout=10) as response:
+                data = response.read(1_000_001)
+            if len(data) > 1_000_000:
+                raise ValueError("Excessive response size")
+            payload = json.loads(data)
+            if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
+                raise ValueError("Incomplete API result")
+        except HTTPError as exc:
+            # Quota, invalid key or disabled API: never persist the message, it may echo the key.
+            out.update({i: dict(status="UNKNOWN", reasons=["YOUTUBE_API_UNAVAILABLE", f"HTTP_{exc.code}"],
+                                video_id=i) for i in chunk})
+            continue
+        except (OSError, ValueError, UnicodeError):
+            out.update({i: dict(status="UNKNOWN", reasons=["YOUTUBE_API_UNAVAILABLE"], video_id=i)
+                        for i in chunk})
+            continue
+        for i in chunk:
+            # A deleted, private or terminated video is silently omitted from items.
+            out[i] = classify(i, {"items": [x for x in payload["items"] if isinstance(x, dict) and x.get("id") == i]})
+    return out
 
 
 def screen(candidate: dict, *, api_key: str | None = None) -> dict:
@@ -82,16 +123,4 @@ def screen(candidate: dict, *, api_key: str | None = None) -> dict:
     video_id = youtube_id(candidate.get("webpage_url", ""))
     if video_id is None:
         return dict(status="UNKNOWN", reasons=["NOT_A_CANONICAL_YOUTUBE_URL"])
-    key = api_key if api_key is not None else os.environ.get("YEU_YOUTUBE_API_KEY", "")
-    if not key:
-        return dict(status="UNKNOWN", reasons=["YOUTUBE_API_KEY_MISSING"], video_id=video_id)
-    query = urlencode({"part": "contentDetails,status", "id": video_id, "key": key})
-    try:
-        with urlopen(API + "?" + query, timeout=10) as response:
-            data = response.read(1_000_001)
-        if len(data) > 1_000_000:
-            raise ValueError("Excessive response size")
-        return classify(video_id, json.loads(data))
-    except (OSError, ValueError, UnicodeError):
-        # Never persist exception text: HTTP errors may include the API key.
-        return dict(status="UNKNOWN", reasons=["YOUTUBE_API_UNAVAILABLE"], video_id=video_id)
+    return lookup([video_id], api_key=api_key)[video_id]

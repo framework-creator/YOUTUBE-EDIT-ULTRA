@@ -42,9 +42,30 @@ def client():
     return build("youtube", "v3", credentials=creds)
 
 
+def _digest(path: Path | None):
+    """Freeze the report seen at upload, so a later rewrite cannot unlock publication."""
+    try:
+        import hashlib
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except (OSError, TypeError):
+        return None
+
+
+def _gate_summary(report: Path | None, video: Path):
+    """Record the pre-montage rights decision with the upload; a missing report is never a pass."""
+    try:
+        data = json.loads(Path(report).read_text(encoding="utf-8"))
+        summary = data["summary"]
+    except (OSError, TypeError, ValueError, KeyError):
+        return "MISSING"
+    if data.get("montage_sha256") != _digest(video):
+        return "NOT_BOUND_TO_THIS_MONTAGE"
+    return summary
+
+
 def upload(video: Path, *, title: str, description: str, tags: list[str],
            privacy: str, thumbnail: Path | None = None, state_path: Path | None = None,
-           synthetic_media: bool = False) -> dict:
+           synthetic_media: bool = False, rights_report: Path | None = None) -> dict:
     if privacy not in {"private", "unlisted", "public"}:
         raise UltraError("Publication explicite requise : private, unlisted ou public")
     # A public API upload cannot report Content ID claims for an ordinary
@@ -90,7 +111,10 @@ def upload(video: Path, *, title: str, description: str, tags: list[str],
              "requested_privacy": privacy, "uploaded_privacy": actual_privacy,
              "copyright_check": "PENDING_STUDIO_REVIEW",
              "publication_requires_manual_approval": True,
-             "note": "Upload privé. Vérifier les restrictions Content ID et pays dans YouTube Studio; publier manuellement après les contrôles."}
+             "rights_report": str(rights_report) if rights_report and Path(rights_report).is_file() else None,
+             "rights_gate": _gate_summary(rights_report, video),
+             "rights_report_sha256": _digest(rights_report),
+             "note": "Upload privé. Vérifier les restrictions Content ID et pays dans YouTube Studio, lancer 'ultra publication-check', puis publier manuellement."}
     state_path.write_text(json.dumps(state, indent=2, ensure_ascii=False))
     if thumbnail and thumbnail.exists():
         try:

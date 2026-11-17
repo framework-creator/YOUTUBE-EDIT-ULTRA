@@ -5,6 +5,7 @@ import argparse
 import json
 import shutil
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,8 @@ from .spec import Settings, detect_sport, load_manifest, parse_duration, parse_p
 from .thumbnail import create_thumbnail, create_storyboard
 from .vision import analyze
 from .youtube import upload
+
+DEFAULT_STATE_DIR = Path.home() / ".local/share/youtube-edit-ultra"
 
 
 def _path(v: str | Path, base: Path) -> Path:
@@ -147,6 +150,28 @@ def create(args: argparse.Namespace) -> int:
     else:
         soundtrack_playlist(music, settings.duration_seconds, allow_repeat=settings.allow_music_repeat,
                             cache_dir=profile_cache)
+    # Every input (local, library, URL, spec, prepared mix) gets a rights decision before analysis.
+    from .catalogue import read as read_catalogue
+    from .source_rights import assert_publishable, gate as rights_gate, write_report as write_rights
+    rights_dir = _path(manifest.get("rights_state_dir") or DEFAULT_STATE_DIR, base)
+    try:
+        rights_state = read_catalogue(rights_dir / "catalogue.json", {})
+        if not isinstance(rights_state, dict):
+            raise ValueError("catalogue is not an object")
+    except (OSError, ValueError) as exc:
+        # No grants can be read: every source is UNVERIFIED, the personal edit itself continues.
+        print(f"Droits : catalogue illisible ({exc}) ; aucune source ne peut être ACCEPTÉE", flush=True)
+        rights_state = {}
+    records = rights_gate([(str(p), "video", None) for p in videos]
+                          + [(str(p), "audio", None) for p in music]
+                          + ([(str(prepared), "audio", "prepared_soundtrack")] if prepared else []),
+                          state=rights_state, offline=bool(manifest.get("offline")))
+    rights = write_rights(settings.output, records, catalogue=str(rights_dir / "catalogue.json"))
+    if args.publishable or manifest.get("publishable"):
+        assert_publishable(records)
+    elif not rights["summary"]["publishable"]:
+        print("Droits : publication non autorisée (sources REJETÉES ou NON VÉRIFIÉES) ; "
+              f"voir {settings.output / 'rights_gate_report.json'}", flush=True)
     print(f"YouTube-Edit-Ultra | {settings.athlete} | {settings.sport} | {settings.style} | {settings.duration_seconds/60:.2f} min")
     print(f"Sources : {len(videos)} vidéos, {len(music)} pistes")
     actions, source_durations, analysis_meta = [], {}, []
@@ -265,11 +290,16 @@ def create(args: argparse.Namespace) -> int:
     thumbnail, metadata = _thumbnail_and_metadata(settings, edits, music)
     storyboard = create_storyboard(edits, settings.output / "storyboard.jpg")
     write_json(settings.output / "render_report.json", result)
+    from .catalogue import sha256 as file_sha256
+    from .source_rights import bind_montage
+    if (settings.output / "montage.mp4").is_file():  # unbound report => upload stays unpublishable
+        bind_montage(settings.output, file_sha256(settings.output / "montage.mp4"))
     print(f"Vidéo : {result['output']} | miniature : {thumbnail} | storyboard : {storyboard}")
     if settings.publish != "none":
         uploaded = upload(settings.output / "montage.mp4", title=metadata["title"],
                           description=metadata["description"], tags=metadata["tags"],
-                          privacy=settings.publish, thumbnail=thumbnail)
+                          privacy=settings.publish, thumbnail=thumbnail,
+                          rights_report=settings.output / "rights_gate_report.json")
         print(f"YouTube : {uploaded['url']} (upload privé ; vérification Content ID dans Studio requise)")
     return 0
 
@@ -309,12 +339,74 @@ def publish(args: argparse.Namespace) -> int:
     title = args.title or meta.get("title") or video.stem
     desc = args.description or meta.get("description", "Sports music montage")
     thumb = Path(args.thumbnail) if args.thumbnail else video.parent / "thumbnail.jpg"
+    report = Path(args.rights_report).expanduser().resolve() if args.rights_report else video.parent / "rights_gate_report.json"
     result = upload(video, title=title, description=desc, tags=meta.get("tags", []),
-                    privacy=args.privacy, thumbnail=thumb, synthetic_media=meta.get("synthetic_media", False))
+                    privacy=args.privacy, thumbnail=thumb, synthetic_media=meta.get("synthetic_media", False),
+                    rights_report=report)
     print(result["url"])
-    print("Upload privé. Ouvrir YouTube Studio, attendre les vérifications de droits "
-          "et vérifier les restrictions par pays avant toute publication.")
+    print("Upload privé. Ouvrir YouTube Studio, attendre les vérifications de droits, puis "
+          "lancer 'ultra publication-check' avant toute publication manuelle.")
     return 0
+
+
+def publication_check(args: argparse.Namespace) -> int:
+    """Record whether a private upload may be published by hand; never changes its visibility."""
+    from .catalogue import read as read_catalogue
+    from .source_rights import gate as rights_gate, summary
+    receipt_path = Path(args.receipt).expanduser().resolve()
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    if not isinstance(receipt, dict):
+        raise UltraError(f"Reçu d'upload invalide : {receipt_path}")
+    reasons = []
+    if not receipt.get("video_id"):
+        reasons.append("NO_UPLOAD_RECEIPT")
+    report_value = args.rights_report or receipt.get("rights_report")
+    report_path = Path(report_value).expanduser() if report_value else None
+    fresh = None
+    if report_path is None or not report_path.is_file():
+        reasons.append("RIGHTS_GATE_REPORT_MISSING")
+    else:
+        import hashlib
+        raw = report_path.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != receipt.get("rights_report_sha256"):
+            # Only the report frozen with this upload describes the uploaded montage.
+            reasons.append("RIGHTS_GATE_REPORT_NOT_THE_ONE_UPLOADED")
+        gate_at_upload = receipt.get("rights_gate")
+        if not (isinstance(gate_at_upload, dict) and gate_at_upload.get("publishable") is True):
+            reasons.append("RIGHTS_GATE_NOT_PUBLISHABLE_AT_UPLOAD")
+        try:
+            records = json.loads(raw.decode("utf-8")).get("records") or []
+            if not isinstance(records, list) or not all(
+                    isinstance(r, dict) and isinstance(r.get("path"), str) and r.get("kind") in {"video", "audio"}
+                    for r in records):
+                raise ValueError("invalid records")
+        except (ValueError, UnicodeError, AttributeError):
+            records = None
+            reasons.append("RIGHTS_GATE_REPORT_INVALID")
+        if records == []:
+            reasons.append("RIGHTS_GATE_REPORT_EMPTY")
+        elif records:
+            # Sources can be removed, geo-blocked or claimed after the edit: re-check them now.
+            state = read_catalogue(Path(args.state_dir).expanduser() / "catalogue.json", {})
+            rechecked = rights_gate([(r["path"], r["kind"], r.get("provenance")) for r in records], state=state)
+            fresh = summary(rechecked)
+            reasons += [f"SOURCE_{r['decision']}:{Path(r['path']).name}:{'+'.join(r['reasons'])}"
+                        for r in fresh["not_accepted"]]
+            reasons += [f"SOURCE_CHANGED_SINCE_RENDER:{Path(old['path']).name}"
+                        for old, new in zip(records, rechecked)
+                        if new["sha256"] and old.get("sha256") != new["sha256"]]
+    if args.studio not in {"no-claims", "claims-no-impact"}:
+        reasons.append(f"STUDIO_CHECK_{args.studio.upper().replace('-', '_')}")
+    if not args.approve:
+        reasons.append("EXPLICIT_PUBLICATION_APPROVAL_MISSING")
+    decision = "KEEP_PRIVATE" if reasons else "READY_FOR_MANUAL_PUBLICATION"
+    receipt["publication_check"] = dict(
+        decision=decision, reasons=reasons, studio_result=args.studio, studio_result_source="user_declaration",
+        approved=bool(args.approve), rights_gate=fresh, checked_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        note="Ce contrôle ne change jamais la visibilité ; publier à la main dans YouTube Studio.")
+    receipt_path.write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(json.dumps(receipt["publication_check"], indent=2, ensure_ascii=False))
+    return 0 if decision == "READY_FOR_MANUAL_PUBLICATION" else 2
 
 
 def inspect_youtube(args: argparse.Namespace) -> int:
@@ -378,6 +470,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--allow-repeat", action="store_true", help="Répéter des actions seulement si choisi")
     p.add_argument("--repeat-music", action="store_true", help="Reboucler la playlist si trop courte")
     p.add_argument("--publish", choices=["none", "private", "unlisted", "public"], default="none")
+    p.add_argument("--publishable", action="store_true",
+                   help="Refuser le montage si une source n'est pas ACCEPTÉE par le contrôle des droits")
     p.add_argument("--title", help="Titre YouTube")
     p.add_argument("--width", type=int, default=1280)
     p.add_argument("--height", type=int, default=720)
@@ -397,7 +491,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--description")
     p.add_argument("--metadata")
     p.add_argument("--thumbnail")
+    p.add_argument("--rights-report", help="rights_gate_report.json du montage (défaut : à côté de la vidéo)")
     p.set_defaults(func=publish)
+    p = sub.add_parser("publication-check", parents=[common],
+                       help="Décider si un upload privé peut être publié à la main, après YouTube Studio")
+    p.add_argument("receipt", help="Reçu *.youtube.json de l'upload privé")
+    p.add_argument("--studio", required=True,
+                   choices=["pending", "no-claims", "claims-no-impact", "restricted", "blocked"],
+                   help="Résultat lu dans YouTube Studio > Contenu > Restrictions, vérifications terminées")
+    p.add_argument("--approve", action="store_true", help="Autorisation explicite de publier")
+    p.add_argument("--rights-report")
+    p.add_argument("--state-dir", default=str(DEFAULT_STATE_DIR))
+    p.set_defaults(func=publication_check)
     # Inspect only the display flag before argparse handles --help or errors.
     display, remaining = common.parse_known_args(argv)
     explicit_banner = remaining[:1] == ["banner"]

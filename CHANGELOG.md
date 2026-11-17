@@ -12,6 +12,23 @@
   Content ID checks and territorial availability in YouTube Studio.
 - Added mocked regression tests and documentation; no claim of Content ID
   clearance or live upload testing.
+- Unified rights gate (`source_rights.py`): every video and music source of
+  `ueu create` and `ultra create` (discovery, catalogue, cache, authorized URL,
+  local file, prepared mix) gets `ACCEPTED`, `REJECTED` or `UNVERIFIED` with
+  provenance, licence and evidence, modification/redistribution permission,
+  geo restriction, claim hints, check date and reliability, in
+  `rights_gate_report.json`. Sources are re-checked with batched `videos.list`
+  calls (removed, private, geo-blocked, partner-claimed).
+- Sports rightsholder footage (UEFA, FIFA, leagues, broadcasters, world feeds),
+  label-distributed music (VEVO, Topic, ISRC, Spotify), NC/ND licences and
+  sources already claimed in `excluded_media.json` are rejected unless an
+  explicit commercial grant exists. A creator's own CC label is never enough.
+- `--publishable` keeps only accepted sources; commercial mode applies it too.
+  Personal edits keep their sources and get a "publication not authorized"
+  warning.
+- Upload receipts record the rights gate. `ultra publication-check` re-checks
+  the sources and requires a finished Studio check plus `--approve` before
+  reporting `READY_FOR_MANUAL_PUBLICATION`; it never changes visibility.
 
 Notable repository changes, not a promise of release packaging or production acceptance.
 
