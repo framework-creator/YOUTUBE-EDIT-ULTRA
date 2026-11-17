@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased — 2026-11-17
+
+### YouTube publishing safeguards
+
+- Automatically discovered YouTube sources now require metadata preflight with no
+  regional restriction flags, partner content indicators or API uncertainty;
+  existing independent rights evidence is still required.
+- Added `ultra inspect-youtube URL` and explicit reason codes for exclusions.
+- New YouTube uploads are held private until the creator reviews final-video
+  Content ID checks and territorial availability in YouTube Studio.
+- Added mocked regression tests and documentation; no claim of Content ID
+  clearance or live upload testing.
+
 Notable repository changes, not a promise of release packaging or production acceptance.
 
 ## Unreleased — 2026-10-31

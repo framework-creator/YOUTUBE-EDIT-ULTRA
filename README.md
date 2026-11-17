@@ -331,15 +331,34 @@ For repeatable projects, edit [`examples/ronaldo.yml`](examples/ronaldo.yml). Ma
 
 1. Enable YouTube Data API v3 in your Google Cloud project and create an OAuth **Desktop** client.
 2. Save its JSON as `~/.config/youtube-edit-ultra/client_secret.json`.
-3. Upload with your account:
+3. To screen *automatically discovered* YouTube sources, configure a separate YouTube Data API v3 key and inspect the source metadata:
+
+```bash
+export YEU_YOUTUBE_API_KEY='YOUR_API_KEY'
+ultra inspect-youtube 'https://www.youtube.com/watch?v=jNQXAC9IVRw'
+```
+
+4. Upload the **finished** montage to your channel for private copyright review:
 
 ```bash
 ultra publish output/cristiano-ronaldo-1800s/montage.mp4 --privacy private
 ```
 
-`private` is the default. Choose `--privacy unlisted` or `--privacy public` explicitly when ready. `ultra create ... --publish private` can upload immediately after rendering.
+Every new upload remains **private**, even if `--privacy unlisted`,
+`--privacy public` or `ultra create --publish public` is requested.
+Wait for YouTube Studio's copyright checks, examine all territory restrictions,
+then manually publish **only** if the rights and checks are acceptable. Source
+metadata alone cannot predict Content ID claims or license reuse. Missing API
+keys or unsuccessful lookups exclude newly discovered YouTube sources from
+automatic acquisition. This does not inspect every pre-existing local file.
 
-Successful upload IDs are stored in `montage.youtube.json` to prevent duplicate submissions of that path. Re-running `publish` after success returns the saved video; it does not change that video's visibility. Verify uploads in YouTube Studio before retrying an interrupted upload that has no saved ID. Google project restrictions and Content ID can affect availability; requested visibility is not a guarantee of public publication.
+Successful upload IDs, requested/actual privacy and the Studio review link are
+stored in `montage.youtube.json` to prevent duplicate submissions of that path.
+Re-running `publish` after success returns the saved video; it does not change
+visibility. Verify uploads in YouTube Studio before retrying interrupted
+uploads with no saved ID. See the
+[YouTube copyright and availability preflight](docs/YOUTUBE_COPYRIGHT_PREFLIGHT.md)
+for exact limitations, rights evidence and checks.
 
 For an explicitly authorized upload containing a realistic synthetic or cloned voice, the `ultra publish` command reads `"synthetic_media": true` from the **JSON** passed with `--metadata` (or adjacent `youtube_metadata.json`) and sends YouTube's synthetic-media disclosure flag. Documentary mode instead writes `youtube_metadata.md` for **review**; this Markdown file is not accepted by `ultra publish`, and documentary export never auto-publishes. Review rights and platform disclosures before uploading.
 

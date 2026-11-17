@@ -47,6 +47,10 @@ def upload(video: Path, *, title: str, description: str, tags: list[str],
            synthetic_media: bool = False) -> dict:
     if privacy not in {"private", "unlisted", "public"}:
         raise UltraError("Publication explicite requise : private, unlisted ou public")
+    # A public API upload cannot report Content ID claims for an ordinary
+    # creator account. Never make a newly rendered video public or unlisted
+    # before the uploader reviews YouTube Studio's actual Copyright checks.
+    actual_privacy = "private"
     if not video.is_file():
         raise UltraError(f"Vidéo manquante: {video}")
     state_path = state_path or video.with_suffix(".youtube.json")
@@ -61,7 +65,7 @@ def upload(video: Path, *, title: str, description: str, tags: list[str],
         part="snippet,status",
         body={"snippet": {"title": title[:100], "description": description[:5000],
                           "tags": tags[:35], "categoryId": "17"},
-              "status": {"privacyStatus": privacy, "selfDeclaredMadeForKids": False,
+              "status": {"privacyStatus": actual_privacy, "selfDeclaredMadeForKids": False,
                          # YouTube disclosure for realistic altered/synthetic content (e.g. a cloned voice)
                          "containsSyntheticMedia": bool(synthetic_media)}},
         media_body=MediaFileUpload(str(video), mimetype="video/mp4",
@@ -82,7 +86,11 @@ def upload(video: Path, *, title: str, description: str, tags: list[str],
     if not vid:
         raise UltraError("YouTube n'a pas renvoyé d'identifiant de vidéo")
     state = {"video_id": vid, "url": f"https://www.youtube.com/watch?v={vid}",
-             "requested_privacy": privacy, "note": "Le projet API Google peut imposer private avant audit."}
+             "studio_url": f"https://studio.youtube.com/video/{vid}/edit",
+             "requested_privacy": privacy, "uploaded_privacy": actual_privacy,
+             "copyright_check": "PENDING_STUDIO_REVIEW",
+             "publication_requires_manual_approval": True,
+             "note": "Upload privé. Vérifier les restrictions Content ID et pays dans YouTube Studio; publier manuellement après les contrôles."}
     state_path.write_text(json.dumps(state, indent=2, ensure_ascii=False))
     if thumbnail and thumbnail.exists():
         try:

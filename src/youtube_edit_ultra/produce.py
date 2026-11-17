@@ -13,6 +13,7 @@ from pathlib import Path
 from . import catalogue as cat, spotify
 from .media import UltraError, download_explicit, download_audio_explicit, downloader_command, slug
 from .spec import parse_prompt, normalize
+from .youtube_preflight import screen as screen_youtube_source
 
 
 def legacy_candidates(state, athlete):
@@ -354,6 +355,13 @@ def locked(args, folder, *, output=None, prepare_only=False):
                         c["permission"] = "UNVERIFIED_NO_DOWNLOAD"
                         continue
                     if not athlete_match(c["title"] or "", request["athlete"]):
+                        continue
+                    # Public playback / CC labels do not imply remix rights. For
+                    # automatic YouTube acquisitions, reject any detected geo flag,
+                    # Content ID partner content or unverified API result.
+                    c["youtube_preflight"] = screen_youtube_source(c)
+                    if c["youtube_preflight"]["status"] != "AVAILABLE_METADATA_ONLY":
+                        c["permission"] = "REJECTED_YOUTUBE_AVAILABILITY_PREFLIGHT"
                         continue
                     cached = [r for r in state['media'].values()
                               if r.get('url') == c['webpage_url'] and cat.permitted(state, r, mode=mode)]
