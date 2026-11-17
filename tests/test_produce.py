@@ -283,12 +283,16 @@ def test_download_only_trusted_licensed_candidate(tmp_path, monkeypatch):
         dict(
             title="Canelo Alvarez licensed",
             license="Creative Commons Attribution license (reuse allowed)",
-            webpage_url="https://example.org/yes",
+            webpage_url="https://www.youtube.com/watch?v=jNQXAC9IVRw",
             uploader="test",
             channel_url="https://example.org/publisher",
         ),
     ]
     monkeypatch.setattr(produce, "discover", lambda *a: candidates)
+    # The availability query is a separate online check: mock approved metadata
+    # while preserving the existing trusted-publisher rights gate.
+    monkeypatch.setattr(produce, "screen_youtube_source",
+                        lambda _: {"status": "AVAILABLE_METADATA_ONLY", "reasons": []})
     called = []
 
     def download(urls, dest):
@@ -317,7 +321,7 @@ def test_download_only_trusted_licensed_candidate(tmp_path, monkeypatch):
         )
         == 2
     )
-    assert called == ["https://example.org/yes"]
+    assert called == ["https://www.youtube.com/watch?v=jNQXAC9IVRw"]
     report = next((tmp_path / "out").glob("*/production_report.json"))
     assert any("test network unavailable" in w for w in json.loads(report.read_text())["warnings"])
 
