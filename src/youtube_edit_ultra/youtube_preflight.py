@@ -53,16 +53,21 @@ def classify(video_id: str, payload: dict) -> dict:
         return dict(status="UNKNOWN", reasons=["INCOMPLETE_API_RESULT"], video_id=video_id)
     reasons = []
     region = details.get("regionRestriction")
-    if isinstance(region, dict) and ("allowed" in region or "blocked" in region):
-        reasons.append("PARTIAL_OR_FULL_GEO_RESTRICTION")
+    if region is not None:
+        reasons.append("PARTIAL_OR_FULL_GEO_RESTRICTION" if isinstance(region, dict)
+                       else "GEO_RESTRICTION_METADATA_UNVERIFIED")
     if details.get("licensedContent") is True:
         reasons.append("CONTENT_PARTNER_CLAIM_RISK")
+    elif details.get("licensedContent") is not False:
+        reasons.append("CONTENT_PARTNER_METADATA_UNVERIFIED")
     if status.get("license") != "creativeCommon":
         reasons.append("NO_CREATIVE_COMMONS_LICENSE")
     if status.get("privacyStatus") != "public":
         reasons.append("SOURCE_NOT_PUBLIC")
     if status.get("embeddable") is False:
         reasons.append("SOURCE_EMBED_RESTRICTED")
+    elif status.get("embeddable") is not True:
+        reasons.append("SOURCE_EMBED_METADATA_UNVERIFIED")
     if status.get("uploadStatus") not in {"processed"}:
         reasons.append("SOURCE_PROCESSING_UNVERIFIED")
     return dict(status="REJECT" if reasons else "AVAILABLE_METADATA_ONLY",
