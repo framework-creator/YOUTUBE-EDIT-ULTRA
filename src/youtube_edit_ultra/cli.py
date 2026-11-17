@@ -317,6 +317,15 @@ def publish(args: argparse.Namespace) -> int:
     return 0
 
 
+def inspect_youtube(args: argparse.Namespace) -> int:
+    """Check original source availability, not rights or downstream Content ID."""
+    from .youtube_preflight import screen
+
+    result = screen({"webpage_url": args.url})
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0 if result["status"] == "AVAILABLE_METADATA_ONLY" else 2
+
+
 def show_banner(args: argparse.Namespace) -> int:
     print_banner(sys.stdout)
     return 0
@@ -378,7 +387,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dry-run", action="store_true")
     p.add_argument('--plan-only', action='store_true', help='Préparer le mix et le plan sans encoder la vidéo')
     p.set_defaults(func=create)
-    p = sub.add_parser("publish", help="Uploader un montage existant", parents=[common])
+    p = sub.add_parser("inspect-youtube", help="Vérifier les restrictions d'une source YouTube, sans garantir les droits", parents=[common])
+    p.add_argument("url", help="URL vidéo YouTube")
+    p.set_defaults(func=inspect_youtube)
+    p = sub.add_parser("publish", help="Uploader un montage existant en privé pour revue Content ID", parents=[common])
     p.add_argument("video")
     p.add_argument("--privacy", choices=["private", "unlisted", "public"], default="private")
     p.add_argument("--title")
